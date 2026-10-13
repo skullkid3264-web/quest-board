@@ -1,8 +1,10 @@
 package app.questboard;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -62,6 +64,8 @@ public class MainActivity extends Activity {
     private String pendingApkUrl;
     private File downloadedApk;
     private boolean checkedOnLaunch = false;
+    private boolean pageIsReady = false;
+    private String pendingQuestId;
     private boolean downloading = false;
 
     @Override
@@ -142,10 +146,24 @@ public class MainActivity extends Activity {
 
         web.addJavascriptInterface(new Bridge(), "Android");
 
+        pendingQuestId = getIntent().getStringExtra("questId");
+
         if (savedInstanceState != null) {
             web.restoreState(savedInstanceState);
         } else {
             web.loadUrl(START_URL);
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        String id = intent.getStringExtra("questId");
+        if (id == null) return;
+        if (pageIsReady) {
+            callJs("QB.openQuest && QB.openQuest(" + JSONObject.quote(id) + ")");
+        } else {
+            pendingQuestId = id;
         }
     }
 
@@ -246,9 +264,38 @@ public class MainActivity extends Activity {
             });
         }
 
+        /** 画面から、お知らせを予約したい依頼の一覧（[{id, at, title}]）が届く */
+        @JavascriptInterface
+        public void syncReminders(String json) {
+            try {
+                Reminders.sync(MainActivity.this, new JSONArray(json));
+            } catch (Exception ignored) {
+            }
+        }
+
+        /** Android 13以降は、通知を出すのに許可がいる */
+        @JavascriptInterface
+        public void requestNotify() {
+            main.post(() -> {
+                if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 21);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public boolean canNotify() {
+            return Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+        }
+
         @JavascriptInterface
         public void pageReady() {
             main.post(() -> {
+                pageIsReady = true;
+                if (pendingQuestId != null) {
+                    callJs("QB.openQuest && QB.openQuest(" + JSONObject.quote(pendingQuestId) + ")");
+                    pendingQuestId = null;
+                }
                 if (!checkedOnLaunch) {
                     checkedOnLaunch = true;
                     checkForUpdate(false);
