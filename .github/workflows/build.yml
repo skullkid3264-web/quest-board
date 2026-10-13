@@ -36,6 +36,17 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
           echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
+      - name: 接続先のURLを入れる
+        env:
+          WEBAPP_URL: ${{ secrets.WEBAPP_URL }}
+        run: |
+          if [ -n "$WEBAPP_URL" ]; then
+            printf 'window.QB_CONFIG = { webAppUrl: %s };\n' "$(printf '%s' "$WEBAPP_URL" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))')" > app/src/main/assets/www/config.js
+            echo "接続先URLを設定しました"
+          else
+            echo "::warning::WEBAPP_URL が未設定のため、連携画面でURLを入力する形になります"
+          fi
+
       - name: APK をビルド
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}

@@ -276,6 +276,7 @@ button { cursor: pointer; }
 <input type="file" id="pickCamera" accept="image/*" capture="environment" hidden>
 <input type="file" id="pickGallery" accept="image/*" hidden>
 
+<script src="config.js"></script>
 <script>
 "use strict";
 /* ============================================================
@@ -531,9 +532,9 @@ async function seedIfFirstRun() {
   const now = Date.now(); const due = new Date(now + 2 * 86400000);
   const dueStr = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}-${String(due.getDate()).padStart(2, "0")}`;
   const samples = [
-    { no: 1, title: "【見本】本棚の一段目を片づける", detail: "これは見本の依頼書です。\n写真は掲示板ではドット絵に、くわしく見るときはモノクロの版画風になります。\n「クエストクリア」を押して達成の演出を試してみてください。", due: dueStr, image: sampleArt("shelf") },
-    { no: 2, title: "【見本】丘の上の塔まで散歩する", detail: "見本です。不要なら「取り下げる」で消せます。", due: "", image: sampleArt("hill") },
-    { no: 3, title: "【見本】写真なしの依頼書", detail: "写真を付けずに貼ることもできます。", due: "", image: "" },
+    { no: 1, title: "【見本】英語の本を1冊読む", detail: "これは見本の依頼書です。\n写真をとると、掲示板ではドット絵に、くわしく見るときは白黒の絵になります。\n「クエストクリア」をおして、達成の演出をためしてみよう。", due: dueStr, image: sampleArt("shelf") },
+    { no: 2, title: "【見本】外で見つけたものを英語で3つ言う", detail: "見本です。いらないときは「取り下げる」で消せます。", due: "", image: sampleArt("hill") },
+    { no: 3, title: "【見本】英単語を5つおぼえる", detail: "写真をつけずに貼ることもできます。", due: "", image: "" },
   ];
   for (const s of samples) await Store.put({ id: `q${now}-${s.no}`, createdAt: now + s.no, clearedAt: null, ...s });
 }
@@ -705,9 +706,9 @@ function openEditor(q) {
   const isNew = !q; const draft = q ? { ...q } : { title: "", detail: "", due: "", image: "", thumb: "" };
   const el = document.createElement("div"); el.className = "veil";
   el.innerHTML = `<div class="sheet drop"><button class="close-x" aria-label="閉じる"><span data-icon="close"></span></button><div class="px win">
-      <h2>${isNew ? "依頼を貼る" : "依頼を書き直す"}</h2><div class="lead">やることを、冒険者への依頼として書きましょう</div>
+      <h2>${isNew ? "依頼を貼る" : "依頼を書き直す"}</h2><div class="lead">やることを、冒険者への依頼として書こう</div>
       <form id="qForm" autocomplete="off">
-        <div class="field"><label for="qTitle"><span data-icon="cursor"></span>依頼の名前</label><input id="qTitle" maxlength="60" required placeholder="例：ニュースレターの下書きを仕上げる" value="${esc(draft.title)}"></div>
+        <div class="field"><label for="qTitle"><span data-icon="cursor"></span>依頼の名前</label><input id="qTitle" maxlength="60" required placeholder="例：英語の宿題を終わらせる" value="${esc(draft.title)}"></div>
         <div class="field"><label for="qDetail"><span data-icon="cursor"></span>くわしい内容</label><textarea id="qDetail" maxlength="2000" placeholder="手順やメモ（なくても大丈夫）">${esc(draft.detail)}</textarea></div>
         <div class="field"><label for="qDue"><span data-icon="cursor"></span>期限</label><input id="qDue" type="date" value="${esc(draft.due)}"><span class="hint">期限が2日以内になると「急」の封蝋が付きます</span></div>
         <div class="field"><span class="lbl"><span data-icon="cursor"></span>依頼の絵</span><div class="pic-box" id="picBox"></div></div>
@@ -915,16 +916,17 @@ function showReward(box, res) {
 }
 function openLinkWindow() {
   const l = Link.get();
+  const presetUrl = String((window.QB_CONFIG && window.QB_CONFIG.webAppUrl) || "").trim();
   const el = document.createElement("div"); el.className = "veil";
   const preview = (r) => (r && r.summary) || rewardText(r) || "なし";
   el.innerHTML = `<div class="sheet drop"><button class="close-x" aria-label="閉じる"><span data-icon="close"></span></button><div class="px win">
-    <h2>コレクション連携</h2><div class="lead">依頼をクリアすると、ステッカーコレクションで「目標達成」として数えられ、目標の報酬が届きます</div>
+    <h2>コレクション連携</h2><div class="lead">ステッカーコレクションのなまえと暗証番号を入れてね。依頼をクリアすると「目標達成」になって、ごほうびのコインが届きます</div>
     ${l ? `<div class="px win link-state"><div><b>${esc(l.name)}</b> と連携しています</div><div class="dim">目標の報酬：<span id="lnkReward">${esc(preview(l.reward))}</span></div>${Link.pending() ? `<div class="dim">届いていない報告：${Link.pending()}件</div>` : ""}</div>
          <p class="err" id="lnkErr"></p>
          <div class="row"><button class="btn ghost px" data-a="unlink">連携を解除する</button><button class="btn px" data-a="check">報酬を確かめる</button></div>`
       : `<form id="lnkForm" autocomplete="off">
-        <div class="field"><label for="lnkUrl"><span data-icon="cursor"></span>ウェブアプリのURL</label><input id="lnkUrl" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(LS.get("qb.lastUrl", ""))}"></div>
-        <div class="field"><label for="lnkName"><span data-icon="cursor"></span>アカウント（名前かStudent ID）</label><input id="lnkName" maxlength="40"></div>
+        ${presetUrl ? `<input id="lnkUrl" type="hidden" value="${esc(presetUrl)}">` : `<div class="field"><label for="lnkUrl"><span data-icon="cursor"></span>ウェブアプリのURL</label><input id="lnkUrl" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(LS.get("qb.lastUrl", ""))}"></div>`}
+        <div class="field"><label for="lnkName"><span data-icon="cursor"></span>コレクションのなまえ</label><input id="lnkName" maxlength="40" placeholder="ログインするときのなまえ"></div>
         <div class="field"><label for="lnkPin"><span data-icon="cursor"></span>暗証番号</label><input id="lnkPin" type="password" inputmode="numeric" maxlength="12"></div>
         <p class="err" id="lnkErr"></p>
         <div class="row"><button type="button" class="btn ghost px" data-a="later">あとで</button><button type="submit" class="btn red px" id="lnkGo">連携する</button></div>
