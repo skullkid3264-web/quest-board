@@ -233,9 +233,19 @@ button { cursor: pointer; }
 .bar-progress i { display: block; height: 100%; width: 0; background: var(--gold); }
 .toast { position: fixed; z-index: 70; left: 50%; bottom: calc(var(--bar-h) + env(safe-area-inset-bottom, 0px) + 92px); transform: translateX(-50%); max-width: calc(100% - 32px); padding: 8px 16px; font-size: 14px; text-align: center; animation: pop .15s steps(3) both; }
 
+/* 報酬（コレクション連携） */
+.qc-reward { display: flex; align-items: center; gap: 10px; margin: 4px var(--p) 0; padding: 8px 14px; font-size: 16px; opacity: 0; animation: show .01s 2.2s forwards; max-width: calc(100% - 8px); }
+.qc-reward img { width: calc(var(--p) * 10); height: calc(var(--p) * 10); flex: none; }
+.qc-reward .lines { display: grid; gap: 2px; text-align: left; }
+.qc-reward .dim { color: var(--win-dim); font-size: 14px; }
+.link-state { margin: var(--p) var(--p) 14px; padding: 10px 12px; }
+.link-state b { font-weight: 400; color: var(--gold-hi); }
+.link-state .dim { color: var(--win-dim); font-size: 14px; }
+.err { color: var(--red-hi); font-size: 14px; min-height: 1.5em; margin: 0 0 4px; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; transition: none !important; }
-  .qc-title span, .qc-sub, .qc-sprite, .qc-tap, .stamp, .rays { opacity: 1 !important; }
+  .qc-title span, .qc-sub, .qc-sprite, .qc-tap, .stamp, .rays, .qc-reward { opacity: 1 !important; }
 }
 </style>
 </head>
@@ -401,6 +411,7 @@ function makeTextures() {
   SPR.pin = circleSprite(6, { fill: v("--gold"), hi: v("--gold-hi"), lo: v("--gold-lo"), ring: v("--ink") });
   SPR.wax = circleSprite(12, { fill: v("--red"), hi: v("--red-hi"), lo: v("--red-lo"), ring: v("--red-lo") });
   SPR.stamp = circleSprite(36, { ring: v("--red"), ringOnly: true, thickness: 2 });
+  SPR.coin = circleSprite(10, { fill: v("--gold"), hi: v("--gold-hi"), lo: v("--gold-lo"), ring: "#4a2d06" });
   SPR.stampMini = circleSprite(11, { ring: v("--red"), fill: "rgba(239,223,182,.85)", hi: "rgba(239,223,182,.85)", lo: "rgba(239,223,182,.85)" });
 }
 
@@ -578,8 +589,9 @@ function render() {
           <span class="rec-date">${fmtDate(q.clearedAt)}</span></button>`).join("")
         : `<p style="text-align:center;padding:14px 0;margin:0;color:var(--ink-2)">まだ記録はありません。最初の依頼を達成すると、ここに綴じられます。</p>`}
     </div></div>
-    <div class="ledger-foot"><span>${ver}</span>${Native && Native.checkUpdate ? `<button class="link-btn px drop" id="checkUpd">新しい版を確かめる</button>` : ""}</div>`;
+    <div class="ledger-foot"><button class="link-btn px drop" id="openLink">${Link.isLinked() ? `コレクション連携中（${esc(Link.get().name)}）` : "コレクションと連携する"}</button><span>${ver}</span>${Native && Native.checkUpdate ? `<button class="link-btn px drop" id="checkUpd">新しい版を確かめる</button>` : ""}</div>`;
   const cu = $("#checkUpd"); if (cu) cu.onclick = () => { Native.checkUpdate(true); };
+  $("#openLink").onclick = () => openLinkWindow();
 }
 async function reload() { quests = await Store.all(); render(); }
 
@@ -798,16 +810,150 @@ async function questClear(q) {
       <div class="qc-title">${letters}</div>
       <div class="qc-sub">依頼達成</div>
       <img class="qc-sprite" src="${heroClearSrc}" alt="">
+      ${Link.isLinked() ? `<div class="qc-reward px win" id="qcReward"><div class="lines"><span class="dim">報酬を受け取っています…</span></div></div>` : ""}
       <div class="qc-tap"><span data-icon="cursor"></span>タップで掲示板へ戻る</div>
     </div>`;
   let stop = () => {};
   const layer = pushLayer(el, async () => { stop(); await reload(); });
   stop = sparkles(el.querySelector("canvas"));
   fanfare();
+  if (Link.isLinked()) Link.reportClear(q).then((res) => showReward(el.querySelector("#qcReward"), res));
   setTimeout(() => vibrate([25, 50, 25]), 560);
   setTimeout(() => vibrate([10, 40, 10, 40, 10, 40, 90]), 1000);
   const openedAt = Date.now();
   el.addEventListener("click", () => { if (Date.now() - openedAt > 900) layer.close(); });
+}
+
+/* ============================================================
+   コレクションアプリ（ステッカー）との連携
+   ・最初にウェブアプリのURL＋アカウント＋暗証番号で登録 → 合言葉（token）を保存
+   ・クリアのたびに達成報告。報酬の中身はウェブアプリ側（Settingsシート）が決める
+   ・電波が無いときは送り箱にためて、つながったときにまとめて送る
+   ============================================================ */
+const Link = (() => {
+  const get = () => LS.get("qb.link", null);
+  const set = (v) => LS.set("qb.link", v);
+  const outbox = () => LS.get("qb.outbox", []);
+  const setOutbox = (v) => LS.set("qb.outbox", v);
+  async function post(url, body) {
+    let res;
+    try { res = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(body), redirect: "follow" }); }
+    catch (e) { const err = new Error("offline"); err.offline = true; throw err; }
+    const text = await res.text();
+    try { return JSON.parse(text); }
+    catch (e) { throw new Error("ウェブアプリから正しい返事がありませんでした。URLと公開設定（アクセスできるユーザー：全員）を確かめてください。"); }
+  }
+  async function register(url, name, pin) {
+    const r = await post(url, { action: "register", name, pin, device: Native ? "Android" : "browser" });
+    if (!r.ok) throw new Error(r.error || "登録できませんでした。");
+    set({ url, token: r.token, name: r.student.name, id: r.student.id, reward: r.reward, linkedAt: Date.now() });
+    return r;
+  }
+  async function status() {
+    const l = get(); if (!l) return null;
+    const r = await post(l.url, { action: "status", token: l.token });
+    if (r.ok) { set({ ...l, name: r.student.name, reward: r.reward }); return r; }
+    if (r.code === "unlinked") { unlink(); }
+    throw new Error(r.error || "状態を確かめられませんでした。");
+  }
+  function unlink() { set(null); setOutbox([]); }
+  async function sendOne(l, job) { return post(l.url, { action: "clear", token: l.token, questId: job.questId, title: job.title, clearedAt: job.clearedAt }); }
+  async function reportClear(q) {
+    const l = get(); if (!l) return { skipped: true };
+    const job = { questId: q.id, title: q.title, clearedAt: q.clearedAt, tries: 0 };
+    try {
+      const r = await sendOne(l, job);
+      if (r.code === "unlinked") { unlink(); }
+      flush();
+      return r;
+    } catch (e) {
+      if (e.offline) { const box = outbox(); if (!box.some((j) => j.questId === job.questId)) box.push(job); setOutbox(box); return { queued: true }; }
+      return { ok: false, error: e.message };
+    }
+  }
+  let flushing = false;
+  async function flush() {
+    const l = get(); if (!l || flushing) return; flushing = true;
+    try {
+      let box = outbox(); const got = [];
+      while (box.length) {
+        const job = box[0];
+        try {
+          const r = await sendOne(l, job);
+          if (r.code === "unlinked") { unlink(); return; }
+          if (r.ok && !r.duplicate && !r.limited) got.push(r.reward);
+          if (!r.ok && ++job.tries < 5) { setOutbox(box); break; }
+        } catch (e) { if (e.offline) break; if (++job.tries < 5) { setOutbox(box); break; } }
+        box = box.slice(1); setOutbox(box);
+      }
+      const text = got.map(rewardText).filter(Boolean).join("、");
+      if (text) toast(`届いていなかった報酬：${text}`);
+    } finally { flushing = false; }
+  }
+  return { get, isLinked: () => !!(get() && get().token), register, status, unlink, reportClear, flush, pending: () => outbox().length };
+})();
+function rewardText(r) {
+  if (!r) return "";
+  const parts = [...(r.coins || []).map((c) => `${c.name}×${c.qty}`), ...(r.items || []).map((i) => i.name)];
+  return parts.join("・");
+}
+function showReward(box, res) {
+  if (!box) return;
+  const coin = `<img src="${SPR.coin}" alt="">`;
+  let html;
+  if (res.queued) html = `<div class="lines"><span>報酬は電波がつながったら届けます</span></div>`;
+  else if (!res.ok) html = `<div class="lines"><span>報酬を届けられませんでした</span><span class="dim">${esc(res.error || "")}</span></div>`;
+  else if (res.duplicate) html = `<div class="lines"><span>この依頼の報酬は受け取り済みです</span></div>`;
+  else if (res.limited) html = `<div class="lines"><span>今日の報酬は上限に達しました</span><span class="dim">達成の記録はちゃんと残っています</span></div>`;
+  else {
+    const t = rewardText(res.reward);
+    html = t ? `${coin}<div class="lines"><span>${esc(t)} を手に入れた！</span><span class="dim">コレクションに届きました</span></div>` : `<div class="lines"><span>今回の報酬はありません</span></div>`;
+  }
+  box.innerHTML = html;
+}
+function openLinkWindow() {
+  const l = Link.get();
+  const el = document.createElement("div"); el.className = "veil";
+  const preview = (r) => rewardText(r) || "なし";
+  el.innerHTML = `<div class="sheet drop"><button class="close-x" aria-label="閉じる"><span data-icon="close"></span></button><div class="px win">
+    <h2>コレクション連携</h2><div class="lead">依頼をクリアすると、ステッカーコレクションに報酬が届きます</div>
+    ${l ? `<div class="px win link-state"><div><b>${esc(l.name)}</b> と連携しています</div><div class="dim">いまの報酬：<span id="lnkReward">${esc(preview(l.reward))}</span></div>${Link.pending() ? `<div class="dim">届いていない報告：${Link.pending()}件</div>` : ""}</div>
+         <p class="err" id="lnkErr"></p>
+         <div class="row"><button class="btn ghost px" data-a="unlink">連携を解除する</button><button class="btn px" data-a="check">報酬を確かめる</button></div>`
+      : `<form id="lnkForm" autocomplete="off">
+        <div class="field"><label for="lnkUrl"><span data-icon="cursor"></span>ウェブアプリのURL</label><input id="lnkUrl" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(LS.get("qb.lastUrl", ""))}"></div>
+        <div class="field"><label for="lnkName"><span data-icon="cursor"></span>アカウント（名前かStudent ID）</label><input id="lnkName" maxlength="40"></div>
+        <div class="field"><label for="lnkPin"><span data-icon="cursor"></span>暗証番号</label><input id="lnkPin" type="password" inputmode="numeric" maxlength="12"></div>
+        <p class="err" id="lnkErr"></p>
+        <div class="row"><button type="button" class="btn ghost px" data-a="later">あとで</button><button type="submit" class="btn red px" id="lnkGo">連携する</button></div>
+      </form>`}
+  </div></div>`;
+  const layer = pushLayer(el);
+  const err = (m) => { const e = el.querySelector("#lnkErr"); if (e) e.textContent = m || ""; };
+  el.addEventListener("click", async (e) => {
+    if (e.target === el || e.target.closest(".close-x")) { layer.close(); return; }
+    const a = e.target.closest("[data-a]"); if (!a) return;
+    if (a.dataset.a === "later") layer.close();
+    else if (a.dataset.a === "unlink") {
+      if (await confirmBox("連携を解除しますか？これからのクリアでは報酬が届かなくなります。", "解除する")) { Link.unlink(); layer.close(); render(); toast("連携を解除しました"); }
+    } else if (a.dataset.a === "check") {
+      a.disabled = true; err("");
+      try { const r = await Link.status(); const sp = el.querySelector("#lnkReward"); if (sp) sp.textContent = preview(r.reward); toast("報酬の設定を読み込みました"); Link.flush(); }
+      catch (ex) { err(ex.offline ? "電波がつながっていません。" : ex.message); if (!Link.isLinked()) { layer.close(); render(); } }
+      a.disabled = false;
+    }
+  });
+  const form = el.querySelector("#lnkForm");
+  if (form) form.addEventListener("submit", async (e) => {
+    e.preventDefault(); err("");
+    const url = el.querySelector("#lnkUrl").value.trim(), name = el.querySelector("#lnkName").value.trim(), pin = el.querySelector("#lnkPin").value.trim();
+    if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) { err("URLは https://script.google.com/ で始まり /exec で終わるものを入れてください。"); return; }
+    if (!name || !pin) { err("アカウントと暗証番号を入れてください。"); return; }
+    LS.set("qb.lastUrl", url);
+    const go = el.querySelector("#lnkGo"); go.disabled = true; go.textContent = "確かめています";
+    try { const r = await Link.register(url, name, pin); layer.close(); render(); toast(`${r.student.name} と連携しました。報酬：${preview(r.reward)}`); }
+    catch (ex) { err(ex.offline ? "電波がつながっていません。" : ex.message); go.disabled = false; go.textContent = "連携する"; }
+  });
 }
 
 /* ---------- 新しい版のお知らせ（Androidアプリから呼ばれる） ---------- */
@@ -847,6 +993,9 @@ $("#soundBtn").onclick = () => { soundOn = !soundOn; LS.set("qb.sound", soundOn)
   await Store.ready; await seedIfFirstRun(); await reload();
   if (Native && Native.pageReady) Native.pageReady();
   await ensureThumbs(); render();
+  Link.flush();
+  window.addEventListener("online", () => Link.flush());
+  if (!Link.isLinked() && !LS.get("qb.linkAsked", false)) { LS.set("qb.linkAsked", true); openLinkWindow(); }
 })();
 </script>
 </body>
