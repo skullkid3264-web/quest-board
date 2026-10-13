@@ -224,14 +224,15 @@ button { cursor: pointer; }
 @keyframes blink { 50% { opacity: 0; } }
 
 /* お知らせ */
-.update { position: fixed; z-index: 30; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 12px); transform: translateX(-50%); width: min(calc(100% - 32px), 520px); display: flex; align-items: center; gap: 8px; padding: 10px 12px; animation: pop .2s steps(4) both; }
-.update p { margin: 0; flex: 1; min-width: 0; font-size: 14px; line-height: 1.4; }
+.update { position: fixed; z-index: 30; left: 16px; right: 16px; top: calc(env(safe-area-inset-top, 0px) + 14px); max-width: 520px; margin: 0 auto; padding: 12px 12px 8px; animation: fade .2s steps(3) both; }
+.update p { margin: 0 36px 6px 0; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
 .update p b { font-weight: 400; color: var(--gold-hi); }
-.update .btn { flex: none; min-height: 40px; padding: 4px 12px; }
-.update .close-x { position: static; width: 32px; height: 32px; }
+.update .acts { display: flex; flex-wrap: wrap; gap: 4px; }
+.update .btn { min-height: 40px; padding: 4px 12px; font-size: 15px; }
+.update .close-x { top: 4px; right: 4px; width: 36px; height: 36px; }
 .bar-progress { display: block; height: calc(var(--p) * 2); margin-top: 6px; background: var(--win-lo); }
 .bar-progress i { display: block; height: 100%; width: 0; background: var(--gold); }
-.toast { position: fixed; z-index: 70; left: 50%; bottom: calc(var(--bar-h) + env(safe-area-inset-bottom, 0px) + 92px); transform: translateX(-50%); max-width: calc(100% - 32px); padding: 8px 16px; font-size: 14px; text-align: center; animation: pop .15s steps(3) both; }
+.toast { position: fixed; z-index: 70; left: 16px; right: 16px; bottom: calc(var(--bar-h) + env(safe-area-inset-bottom, 0px) + 92px); width: fit-content; max-width: calc(100% - 32px); margin: 0 auto; padding: 8px 16px; font-size: 14px; text-align: center; overflow-wrap: anywhere; animation: fade .15s steps(3) both; }
 
 /* 報酬（コレクション連携） */
 .qc-reward { display: flex; align-items: center; gap: 10px; margin: 4px var(--p) 0; padding: 8px 14px; font-size: 16px; opacity: 0; animation: show .01s 2.2s forwards; max-width: calc(100% - 8px); }
@@ -959,18 +960,30 @@ function openLinkWindow() {
 
 /* ---------- 新しい版のお知らせ（Androidアプリから呼ばれる） ---------- */
 let updBanner = null;
-window.QB.onUpdateAvailable = (version, notes) => {
+let updApkUrl = "";
+window.QB.onUpdateAvailable = (version, notes, apkUrl) => {
+  updApkUrl = apkUrl || "";
   if (updBanner) updBanner.remove();
   updBanner = document.createElement("div"); updBanner.className = "update px win drop";
   updBanner.innerHTML = `<p><b>新しい版（第${esc(version)}版）が届いています</b>${notes ? `<br><span class="hint">${esc(notes).slice(0, 120)}</span>` : ""}<span class="bar-progress" hidden><i></i></span></p>
-    <button class="btn red px" data-a="go">更新する</button><button class="close-x" aria-label="あとで"><span data-icon="close"></span></button>`;
+    <div class="acts"><button class="btn red px" data-a="go">更新する</button></div>
+    <button class="close-x" aria-label="あとで"><span data-icon="close"></span></button>`;
   fillIcons(updBanner);
   document.body.appendChild(updBanner);
   updBanner.querySelector('[data-a="go"]').onclick = (e) => { const b = e.currentTarget; b.disabled = true; b.textContent = "取得中"; updBanner.querySelector(".bar-progress").hidden = false; Native && Native.startUpdate(); };
   updBanner.querySelector(".close-x").onclick = () => { updBanner.remove(); updBanner = null; };
 };
 window.QB.onUpdateProgress = (pct) => { if (!updBanner) return; const i = updBanner.querySelector(".bar-progress i"); if (i) i.style.width = `${pct}%`; };
-window.QB.onUpdateError = (msg) => { toast(msg || "更新を取得できませんでした。通信状態を確かめて、もう一度試してください。"); if (updBanner) { const b = updBanner.querySelector('[data-a="go"]'); b.disabled = false; b.textContent = "もう一度"; } };
+window.QB.onUpdateError = (msg) => {
+  toast(msg || "更新を取得できませんでした。通信状態を確かめて、もう一度試してください。");
+  if (!updBanner) return;
+  const b = updBanner.querySelector('[data-a="go"]'); b.disabled = false; b.textContent = "もう一度";
+  if (updApkUrl && Native && Native.openUrl && !updBanner.querySelector('[data-a="web"]')) {
+    const w = document.createElement("button"); w.className = "btn px"; w.dataset.a = "web"; w.textContent = "ブラウザで入れる";
+    w.onclick = () => Native.openUrl(updApkUrl);
+    updBanner.querySelector(".acts").appendChild(w);
+  }
+};
 window.QB.onUpToDate = () => toast("いまの版が最新です");
 
 /* ---------- 効果音ボタン ---------- */

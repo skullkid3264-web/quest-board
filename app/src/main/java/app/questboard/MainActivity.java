@@ -237,6 +237,16 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void openUrl(String url) {
+            main.post(() -> {
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                } catch (ActivityNotFoundException ignored) {
+                }
+            });
+        }
+
+        @JavascriptInterface
         public void pageReady() {
             main.post(() -> {
                 if (!checkedOnLaunch) {
@@ -285,7 +295,7 @@ public class MainActivity extends Activity {
 
                 if (latest > BuildConfig.VERSION_CODE && apkUrl != null) {
                     pendingApkUrl = apkUrl;
-                    callJs("QB.onUpdateAvailable(" + JSONObject.quote(String.valueOf(latest)) + "," + JSONObject.quote(notes) + ")");
+                    callJs("QB.onUpdateAvailable(" + JSONObject.quote(String.valueOf(latest)) + "," + JSONObject.quote(notes) + "," + JSONObject.quote(apkUrl) + ")");
                 } else if (manual) {
                     callJs("QB.onUpToDate()");
                 }
