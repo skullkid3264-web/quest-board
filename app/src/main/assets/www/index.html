@@ -857,10 +857,10 @@ const Link = (() => {
     throw new Error(r.error || "状態を確かめられませんでした。");
   }
   function unlink() { set(null); setOutbox([]); }
-  async function sendOne(l, job) { return post(l.url, { action: "clear", token: l.token, questId: job.questId, title: job.title, clearedAt: job.clearedAt }); }
+  async function sendOne(l, job) { return post(l.url, { action: "clear", token: l.token, questId: job.questId, title: job.title, clearedAt: job.clearedAt, due: job.due || "" }); }
   async function reportClear(q) {
     const l = get(); if (!l) return { skipped: true };
-    const job = { questId: q.id, title: q.title, clearedAt: q.clearedAt, tries: 0 };
+    const job = { questId: q.id, title: q.title, clearedAt: q.clearedAt, due: q.due || "", tries: 0 };
     try {
       const r = await sendOne(l, job);
       if (r.code === "unlinked") { unlink(); }
@@ -907,17 +907,18 @@ function showReward(box, res) {
   else if (res.limited) html = `<div class="lines"><span>今日の報酬は上限に達しました</span><span class="dim">達成の記録はちゃんと残っています</span></div>`;
   else {
     const t = rewardText(res.reward);
-    html = t ? `${coin}<div class="lines"><span>${esc(t)} を手に入れた！</span><span class="dim">コレクションに届きました</span></div>` : `<div class="lines"><span>今回の報酬はありません</span></div>`;
+    const count = res.reward && res.reward.goalCount ? `目標達成 通算${res.reward.goalCount}回目` : "目標達成として記録しました";
+    html = t ? `${coin}<div class="lines"><span>${esc(t)} を手に入れた！</span><span class="dim">${count}</span></div>` : `<div class="lines"><span>${count}</span><span class="dim">今回のコインはありません</span></div>`;
   }
   box.innerHTML = html;
 }
 function openLinkWindow() {
   const l = Link.get();
   const el = document.createElement("div"); el.className = "veil";
-  const preview = (r) => rewardText(r) || "なし";
+  const preview = (r) => (r && r.summary) || rewardText(r) || "なし";
   el.innerHTML = `<div class="sheet drop"><button class="close-x" aria-label="閉じる"><span data-icon="close"></span></button><div class="px win">
-    <h2>コレクション連携</h2><div class="lead">依頼をクリアすると、ステッカーコレクションに報酬が届きます</div>
-    ${l ? `<div class="px win link-state"><div><b>${esc(l.name)}</b> と連携しています</div><div class="dim">いまの報酬：<span id="lnkReward">${esc(preview(l.reward))}</span></div>${Link.pending() ? `<div class="dim">届いていない報告：${Link.pending()}件</div>` : ""}</div>
+    <h2>コレクション連携</h2><div class="lead">依頼をクリアすると、ステッカーコレクションで「目標達成」として数えられ、目標の報酬が届きます</div>
+    ${l ? `<div class="px win link-state"><div><b>${esc(l.name)}</b> と連携しています</div><div class="dim">目標の報酬：<span id="lnkReward">${esc(preview(l.reward))}</span></div>${Link.pending() ? `<div class="dim">届いていない報告：${Link.pending()}件</div>` : ""}</div>
          <p class="err" id="lnkErr"></p>
          <div class="row"><button class="btn ghost px" data-a="unlink">連携を解除する</button><button class="btn px" data-a="check">報酬を確かめる</button></div>`
       : `<form id="lnkForm" autocomplete="off">
