@@ -1,6 +1,4 @@
 # フォントについて
 
-- `serif.woff` … Noto Serif CJK JP（SemiBold）を、よく使う文字に絞って変換したもの。© Adobe / Google. SIL Open Font License 1.1
-- `lora.ttf` … Lora. © The Lora Project Authors. SIL Open Font License 1.1
-
-ライセンス本文: https://openfontlicense.org/open-font-license-official-text/
+- `dotgothic16.ttf` … DotGothic16. © The DotGothic16 Project Authors. SIL Open Font License 1.1（OFL-DotGothic16.txt）
+- `pressstart2p.ttf` … Press Start 2P. © CodeMan38. SIL Open Font License 1.1（OFL-PressStart2P.txt）
